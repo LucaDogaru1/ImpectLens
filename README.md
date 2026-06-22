@@ -1,6 +1,6 @@
 # ImpactLens
 
-ImpactLens scans PHP and JavaScript/Vue codebases into a **queryable code graph**, then maps **ticket text to that graph** — producing a compact briefing of where to start in code.
+ImpactLens scans codebases into a **queryable code graph**, then maps **ticket text to that graph** — producing a compact briefing of where to start in code.
 
 **Ticket → graph → briefing** is the core workflow. Everything else (blast radius, architecture, cycles) queries the same graph.
 
