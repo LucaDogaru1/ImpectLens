@@ -17,17 +17,17 @@ function installAgentSkill(io = {}) {
 
     const skillSource = path.join(__dirname, '..', 'assets', 'agent-skill', 'SKILL.md');
     if (!fs.existsSync(skillSource)) {
-        warn('[impactlens] Agent skill template missing; skip .cursor/skills install.');
+        warn('[impactlens] Agent skill template missing; skip .ai/impactlens install.');
         return { ok: false, skipped: true, reason: 'template missing' };
     }
 
     const projectRoot = resolveProjectRoot();
-    const skillDir = path.join(projectRoot, '.cursor', 'skills', 'impactlens');
-    const skillDest = path.join(skillDir, 'SKILL.md');
+    const skillDir = path.join(projectRoot, '.ai', 'impactlens');
+    const skillDest = path.join(skillDir, 'skill.md');
 
     fs.mkdirSync(skillDir, { recursive: true });
     fs.writeFileSync(skillDest, fs.readFileSync(skillSource, 'utf8'), 'utf8');
-    log(`[impactlens] Cursor agent skill → ${path.relative(projectRoot, skillDest)}`);
+    log(`[impactlens] Agent skill → ${path.relative(projectRoot, skillDest)}`);
     log('[impactlens] Commands: npx impactlens --commands');
     return { ok: true, path: skillDest };
 }

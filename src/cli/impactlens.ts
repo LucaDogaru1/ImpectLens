@@ -85,7 +85,7 @@ const COMMANDS: Record<string, CommandDef> = {
     },
     "install-skill": {
         script: "",
-        description: "Write .cursor/skills/impactlens/SKILL.md in the current project",
+        description: "Write .ai/impactlens/skill.md in the current project",
     },
 };
 
@@ -125,8 +125,8 @@ Examples:
 List commands only:  impactlens --commands
 Full help:           impactlens --help
 
-After npm install, the Cursor agent skill is written to:
-  .cursor/skills/impactlens/SKILL.md
+After npm install, the agent skill is written to:
+  .ai/impactlens/skill.md
 
 Skip auto-install: IMPACTLENS_SKIP_SKILL=1 npm install impactlens
 Docs: https://github.com/LucaDogaru1/ImpectLens
