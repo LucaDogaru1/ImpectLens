@@ -2,51 +2,32 @@
 name: impactlens
 description: >-
   Run ImpactLens ticket analysis with inferred --answers (never unsure on readable
-  tickets), then ai-context or change-impact from the briefing. Use for tickets,
-  blast radius, UI→API flows, or ImpactLens / Graph.sqlite / impactlens ticket.
+  tickets), optional --boost/--suppress, then ai-context or change-impact from
+  the briefing. Use for tickets, blast radius, UI→API flows, Graph.sqlite, or
+  impactlens CLI.
 ---
 
 # ImpactLens — agent playbook
 
-> **Do not use `unsure` when the ticket text is readable — infer the closest intent yourself.**
->
-> Always pass explicit `--answers=ticket_topic:…,change_includes:…`. Leaving intent open (`unsure` or skipping `--answers`) lets the graph rank the wrong workflow — e.g. queue listeners instead of a CMS/UI ticket that mentions VOD or “event” in display rules.
+> **Never use `unsure` on readable tickets.** Always pass `--answers=ticket_topic:…,change_includes:…`. Skipping intent ranks the wrong workflow (e.g. queue jobs on a CMS/UI ticket).
 
-ImpactLens returns a **compact markdown briefing** from a pre-built code graph.
-Your job:
-1. Read the ticket.
-2. Infer intent.
-3. Run ticket analysis.
-4. Open only the highest-ranked files first.
+ImpactLens returns a **compact markdown briefing** from a pre-built graph. **Ticket = spec; graph = navigation.**
 
-Assume `sqlite/Graph.sqlite` exists unless the user says otherwise. Do **not** re-scan the repo unless the graph is missing or the user asks.
+1. Read ticket → infer intent
+2. `impactlens ticket` with `--answers` (+ `--boost`/`--suppress` if noisy)
+3. Open **read-first** files (max 3–5)
+4. `ai-context` / `change-impact` on one symbol — before grep or manual tracing
 
-CLI: `impactlens <command> …` (from `npm install impactlens` or `npx impactlens …`).
+Assume `sqlite/Graph.sqlite` exists. **Do not re-scan** unless the graph is missing or the user asks.
 
-The preferred CLI is `impactlens ...`.
-Avoid legacy examples using `npm run analyze:*` unless working inside the ImpactLens source repository itself.
+**CLI:** `impactlens …` or `npx impactlens …` · list commands: `npx impactlens --commands`  
+Use `npm run analyze:*` only inside the ImpactLens source repo.
 
-### Ticket-first mindset
+If graph and ticket disagree: **trust the ticket** → use graph to locate code → verify manually.
 
-The ticket is the specification.
+---
 
-ImpactLens is a navigation tool that helps locate the implementation.
-Do not infer requirements from graph results that are not present in the ticket.
-
-If graph matches and ticket requirements disagree:
-1. Trust the ticket.
-2. Use the graph to find the implementation.
-3. Verify manually before changing code.
-
-## Step 1 — Read the ticket first
-
-Before running anything, read the full ticket text from `--ticket=path/to/file.txt`. The ticket **is** the summary — titles, overview tables, entity names, layout names, acceptance criteria, etc.
-
-From that text, **infer the closest `ticket_topic` and `change_includes`** and pass them in `--answers`. Do **not** run interactive ticket analysis, do **not** pass `unsure`, and do **not** wait for a human to answer prompts.
-
-## Step 2 — Run ticket analysis with inferred answers
-
-Always pass intent via `--answers` (derived from the ticket you just read):
+## Run ticket analysis
 
 ```bash
 impactlens ticket sqlite/Graph.sqlite \
@@ -57,187 +38,117 @@ impactlens ticket sqlite/Graph.sqlite \
   --suppress=vertical-promotion
 ```
 
-`--boost` / `--suppress` are optional agent hints. Use them when the ticket names concrete symbols but the graph ranks noisy neighbors higher (e.g. hero tickets where `vertical-promotion` drowns `heroTeaser`). The analyzer still ranks against the real graph — hints only nudge scores.
+Default output is the **briefing** (token-efficient). Use `--full` only when debugging ranking.
 
-### Scope selection (`--scopes`)
+### Ranking hints (`--boost` / `--suppress`)
 
-Choose scopes based on **how the feature is implemented**, not simply whether a UI exists.
+Optional comma-separated symbol/path terms from the ticket.
 
-| Scopes   | Use when…                                                                                                                                                                              |
-| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `php`    | Backend-only work: queue jobs, imports, migrations, services, repositories, Artisan commands, API serialization, or Laravel Blade / Livewire screens with little or no JS involvement. |
-| `php,js` | Vue/JavaScript frontends, CMS components, layouts, frontend display logic, or tickets that may cross frontend → API → backend boundaries.                                              |
+| Flag | Effect |
+|------|--------|
+| `--boost=HeroTeaser,slidePreset` | Raise nodes matching those terms |
+| `--suppress=vertical-promotion` | Demote or drop noisy matches |
 
-**Examples**
+Use when the ticket names a concrete entity but ranking surfaces neighbors (e.g. `vertical-promotion` drowning `heroTeaser`). **Hints nudge scores only — they do not create graph edges.** Briefing **read-first** may still lead with route/symbol anchors; use `--full` or `--legacy` to inspect ranked evidence.
 
-* SQS listener + queue job + model status update → `php`
-* XML/CSV import pipeline → `php`
-* API response field added in a Laravel Resource → `php`
-* Blade-only admin screen → `php`
-* Livewire page with no meaningful JS graph involvement → `php`
-* Hero layout change in Vue → `php,js`
-* Slide preset dropdown → `php,js`
-* CMS module option component → `php,js`
-* Frontend display rule calling an API → `php,js`
-* Nuxt monorepo ticket (composables, `$fetch`, packages) → `php,js` — see package [support.md](../../docs/support.md#nuxt-beta)
+### Scopes (`--scopes`)
 
-**Rule of thumb**
+| Scope | Use when |
+|-------|----------|
+| `php` | Controllers, services, jobs, listeners, imports, migrations, API resources, Blade/Livewire with little JS |
+| `php,js` | Vue, Nuxt, CMS UI, composables, frontend logic, UI→API flows |
 
-Use `php,js` when the ticket references:
+**Examples:** SQS/job/import/API Resource-only → `php` · Hero Vue layout, slide preset dropdown, CMS module, Nuxt composables/`$fetch` → `php,js`
 
-* `.vue` files
-* Vue components
-* composables
-* frontend display behavior
-* client-side filtering
-* frontend API calls
+**`php,js` when ticket mentions:** `.vue`, components, composables, CMS/editor UI, client filters, frontend API calls.  
+**`php` when only:** PHP classes, routes, jobs, migrations, Blade, Livewire, models, serializers.
 
-Use `php` when the ticket references only:
+Nuxt monorepos need `impactlens.config.json` package aliases — see package `docs/support.md` and `docs/config-setup.md`.
 
-* PHP classes
-* controllers
-* routes
-* jobs/listeners
-* migrations
-* Blade views
-* Livewire components
-* API resources/serializers
-* Laravel Resources
-* Eloquent models
+### Infer `--answers`
 
-### Infer `ticket_topic` from ticket text
+**`ticket_topic`**
 
-| Answer id | Pick when ticket is mainly about… |
-|-----------|-----------------------------------|
-| `ui` | CMS/admin UI, layouts, components, display rules, screens, hero/preset/slide |
-| `queue` | SQS, queue listeners, async jobs, consumers, message handling |
-| `api` | API contract, request/response fields, serialization, endpoints |
-| `import` | XML/CSV/feed import, external provider ingestion |
-| `cron` | Scheduled/nightly/daily jobs |
-| `migration` | Schema migration, new columns/tables |
+| id | Mainly about |
+|----|----------------|
+| `ui` | CMS/admin UI, layouts, components, display rules, hero/preset/slide |
+| `queue` | SQS, listeners, async jobs, consumers |
+| `api` | Endpoints, request/response, serialization |
+| `import` | XML/CSV/feed ingestion |
+| `cron` | Scheduled jobs |
+| `migration` | Schema/columns/tables |
 | `background` | Background workers (non-SQS) |
-| `mixed` | Clearly spans two+ workflows equally (e.g. queue + API field change) |
+| `mixed` | Two+ workflows equally |
 
-Never answer `unsure` here if the ticket text is readable.
+**`change_includes`**
 
-### Infer `change_includes` from ticket text
+| id | Touches |
+|----|---------|
+| `cms_ui` | CMS/editor/admin UI (most layout specs) |
+| `queue_job` | Listener, SQS consumer, job class |
+| `api_field` | API payload/response fields |
+| `persistence` | DB/model columns/status |
+| `backend_logic` | Services only |
+| `import_pipeline` | Import/parser pipeline |
+| `infra_new` | Net-new infra |
+| `mixed` | Multiple surfaces equally |
 
-| Answer id | Pick when change touches… |
-|-----------|---------------------------|
-| `cms_ui` | CMS editor, admin UI, component/layout display (most UI layout specs) |
-| `queue_job` | Queue listener, SQS consumer, job class |
-| `api_field` | API payload/response field add or change |
-| `persistence` | DB/model status or column persistence |
-| `backend_logic` | Service logic only, no UI or API surface |
-| `import_pipeline` | Import/parser/transformer pipeline |
-| `infra_new` | Net-new queue/infra from scratch |
-| `mixed` | Multiple surfaces apply equally |
+**Mappings:** hero CMS spec → `ui,cms_ui` · SQS archive → `queue,queue_job` · slide preset UI + API filter → `ui,mixed`
 
-Example — hero/layout CMS spec → `--answers=ticket_topic:ui,change_includes:cms_ui`  
-Example — SQS archive flow → `--answers=ticket_topic:queue,change_includes:queue_job`  
-Example — slide preset dropdown + API filter → `--answers=ticket_topic:ui,change_includes:mixed`
+Always set explicit `--answers` yourself from the ticket text. Use `--non-interactive` only for automation or scripting (skips prompts when answers are already complete).
 
-Do **not** use `--non-interactive` as a substitute for reading the ticket — it may still infer wrong on ambiguous text. Prefer explicit `--answers` you chose from the ticket.
+---
 
-## Step 3 — Use the briefing
+## Use the briefing
 
-Default output **is** the briefing. Do not request `--full` unless debugging ranking.
+Order: **Read first** → **Likely flow paths** → **Files to open** → **Warnings / verify** → ticket acceptance criteria.
 
-Trust order:
+- `[complete]` = UI→HTTP→controller chain in graph
+- `[partial]` = graph gap — **do not invent** missing code
+- Ignore flow paths that do not match ticket entities
+- **Implementation confidence &lt; 0.35** → navigation hints only
 
-1. **Read first** — open these files, in order (max 3–5 before asking for more)
-2. **Likely flow paths** — `[complete]` = UI→HTTP→controller chain; `[partial]` = graph gap — do not invent missing code
-3. **Files to open** — deduplicated paths from read-first
-4. **Warnings / verify manually** — low confidence, missing JS graph, truncated ticket
-5. **Ticket entities and acceptance criteria** — the ticket remains the source of truth
+---
 
-If the graph and the ticket disagree, trust the ticket first.
-The graph is a navigation aid, not the specification.
+## Follow-up (before manual repo search)
 
-Ignore flow paths that do not match ticket entities (unrelated controllers/endpoints). Prefer names from the ticket (hero, preset, slide, etc.).
+Symbol ids from briefing backticks:
 
-If **implementation confidence < 0.35**, treat matches as navigation hints only.
-
-## Step 4 — Follow-up commands (use before manual repo search)
-
-Once the briefing gives you a **concrete symbol** (class, method, Vue component id from read-first), use ImpactLens again instead of grepping the monorepo or guessing blast radius.
-
-Symbol ids come from the briefing backticks, e.g.:
-
-- PHP: `SpOTTBackend\\Jobs\\Content\\ProcessExpiredVodObjectJob::handle`
+- PHP: `SpOTTBackend\\Services\\Foo::bar`
 - Vue/JS: `js:apps/.../heroTeaser/index.vue::HeroTeaser`
 - API: `api:GET:/slide-presets`
 
-### `ai-context` — understand one symbol (default follow-up)
-
-**When:** You know *where* to look but need callers, callees, dependencies, inheritance, risk — in one compact report.
-
-**Use instead of:** Opening dozens of files, manual call-chain tracing, guessing what breaks.
-
 ```bash
-impactlens ai-context sqlite/Graph.sqlite "<ClassOrMethodOrNodeId>" --compact
+impactlens ai-context sqlite/Graph.sqlite "<symbol>" --compact    # callers, callees, deps
+impactlens change-impact sqlite/Graph.sqlite "<symbol>" --depth=2 --limit=10   # blast radius
+impactlens impact sqlite/Graph.sqlite "<symbol>" --limit=20        # deeper + inheritance
 ```
 
-Add `--depth=3` if the chain is deep. Prefer `--compact` for chat context.
+| Command | When |
+|---------|------|
+| `architecture --architecture-config=…` | Layer-rule checks |
+| `risk` / `hotspots` | Repo-wide risk, no specific ticket target |
+| `cycles` / `dead-code` | Cleanup tasks, not feature tickets |
 
-### `change-impact` — blast radius before editing
+**Sequence:** ticket → read-first → pick symbol → `ai-context` → `change-impact` (if editing) → implement
 
-**When:** You plan to change a specific method or class and need *who calls it* / upstream impact.
-
-**Use instead of:** Manual “find references” across the repo.
-
-```bash
-impactlens change-impact sqlite/Graph.sqlite "<ClassOrMethodId>" --depth=2 --limit=10
-```
-
-Read **Affected callers** first; then **What this method uses** for downstream deps.
-
-### `impact` — deeper impact + inheritance
-
-**When:** `change-impact` is not enough — you need inheritance-aware resolution, richer caller/callee lists, or a full written report.
-
-**Use instead of:** Chasing parent classes and overrides by hand.
-
-```bash
-impactlens impact sqlite/Graph.sqlite "<Class::method>" --limit=20
-```
-
-Heavier output; use when refactoring a core method.
-
-### Other commands (situational)
-
-| Command | Use when | Skip when |
-|---------|----------|-----------|
-| `impactlens architecture --architecture-config=…` | Checking layer violations (controller→service→repo) | Normal ticket implementation |
-| `impactlens risk` | Repo-wide “what is risky to touch” prioritization | You already have a ticket-specific target |
-| `impactlens hotspots` | Finding highly connected nodes with no ticket | Ticket briefing already named the entrypoint |
-| `impactlens cycles` / `impactlens dead-code` | Cleanup/refactor tasks | Feature tickets |
-
-### Suggested agent sequence
-
-```text
-1. Read ticket → infer --answers
-2. impactlens ticket → briefing → open read-first files (max 3–5)
-3. Pick one symbol from briefing
-4. impactlens ai-context --compact   (understand local graph)
-5. impactlens change-impact          (only if you will edit that symbol)
-6. Implement — do not re-derive steps 4–5 by blind grep if graph has the node
-```
+---
 
 ## Do not
 
-- Use `unsure` (or omit `--answers`) when the ticket text is readable — **infer the closest intent yourself**
-- Paste `Graph.json` or `--full` ticket output into chat (token waste)
-- Re-scan the monorepo on every ticket
-- Treat unrelated `[complete]` flow paths as in-scope for the ticket
-- Grep/trace callers manually when `ai-context` or `change-impact` can answer from the graph
+- `unsure` or omit `--answers` on readable tickets
+- Paste `Graph.json` or `--full` output into chat
+- Re-scan every ticket
+- Treat unrelated `[complete]` paths as in-scope
+- Grep callers when `ai-context` / `change-impact` can answer
 
-## Known graph gaps (say honestly if relevant)
+## Known graph gaps (state honestly)
 
-- Partial flow paths when Vue/Nuxt has no `HTTP_REQUEST` edge (missing path aliases, dynamic URL, or scan gap)
-- Nuxt: Nitro `server/api/` routes not scanned; `$fetch`/`useFetch` need `api/v…` in source for static URL extraction
-- Pug templates not parsed
-- Graph excludes `vendor`, `node_modules`, `tests` by default
-- Ticket ranking is heuristic; explicit `--answers` are preferred when ticket intent is clear
+- Partial flows: missing `HTTP_REQUEST` (path aliases, scan gap, undetected `$fetch`/`useFetch`)
+- Nuxt: Nitro `server/api/` not scanned; `$fetch`/`useFetch` need `api/v…` in source
+- Pug templates not parsed; `vendor/`, `node_modules/`, `tests/` excluded
+- PHP scanner mature; JS/Vue/Nuxt beta — read `docs/support.md`
 
-Human setup (scan, config): `impactlens scan …` · see package docs / quickstart
+## Human setup
+
+`impactlens scan /path/to/repo --lang=both --output=both` · aliases: `docs/config-setup.md` · `docs/quickstart.md`
