@@ -12,11 +12,31 @@ description: >-
 >
 > Always pass explicit `--answers=ticket_topic:…,change_includes:…`. Leaving intent open (`unsure` or skipping `--answers`) lets the graph rank the wrong workflow — e.g. queue listeners instead of a CMS/UI ticket that mentions VOD or “event” in display rules.
 
-ImpactLens returns a **compact markdown briefing** from a pre-built code graph. Your job: read the ticket, infer intent, run analysis, open only the listed files.
+ImpactLens returns a **compact markdown briefing** from a pre-built code graph.
+Your job:
+1. Read the ticket.
+2. Infer intent.
+3. Run ticket analysis.
+4. Open only the highest-ranked files first.
 
 Assume `sqlite/Graph.sqlite` exists unless the user says otherwise. Do **not** re-scan the repo unless the graph is missing or the user asks.
 
 CLI: `impactlens <command> …` (from `npm install impactlens` or `npx impactlens …`).
+
+The preferred CLI is `impactlens ...`.
+Avoid legacy examples using `npm run analyze:*` unless working inside the ImpactLens source repository itself.
+
+### Ticket-first mindset
+
+The ticket is the specification.
+
+ImpactLens is a navigation tool that helps locate the implementation.
+Do not infer requirements from graph results that are not present in the ticket.
+
+If graph matches and ticket requirements disagree:
+1. Trust the ticket.
+2. Use the graph to find the implementation.
+3. Verify manually before changing code.
 
 ## Step 1 — Read the ticket first
 
@@ -35,7 +55,50 @@ impactlens ticket sqlite/Graph.sqlite \
   --answers=ticket_topic:<id>,change_includes:<id>
 ```
 
-Use `--scopes=php` only for pure backend/queue tickets with no UI. Use `php,js` when the ticket mentions CMS, components, layouts, hero/preset/slide, Vue, or frontend display logic.
+### Scope selection (`--scopes`)
+
+Choose scopes based on **how the feature is implemented**, not simply whether a UI exists.
+
+| Scopes   | Use when…                                                                                                                                                                              |
+| -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `php`    | Backend-only work: queue jobs, imports, migrations, services, repositories, Artisan commands, API serialization, or Laravel Blade / Livewire screens with little or no JS involvement. |
+| `php,js` | Vue/JavaScript frontends, CMS components, layouts, frontend display logic, or tickets that may cross frontend → API → backend boundaries.                                              |
+
+**Examples**
+
+* SQS listener + queue job + model status update → `php`
+* XML/CSV import pipeline → `php`
+* API response field added in a Laravel Resource → `php`
+* Blade-only admin screen → `php`
+* Livewire page with no meaningful JS graph involvement → `php`
+* Hero layout change in Vue → `php,js`
+* Slide preset dropdown → `php,js`
+* CMS module option component → `php,js`
+* Frontend display rule calling an API → `php,js`
+
+**Rule of thumb**
+
+Use `php,js` when the ticket references:
+
+* `.vue` files
+* Vue components
+* composables
+* frontend display behavior
+* client-side filtering
+* frontend API calls
+
+Use `php` when the ticket references only:
+
+* PHP classes
+* controllers
+* routes
+* jobs/listeners
+* migrations
+* Blade views
+* Livewire components
+* API resources/serializers
+* Laravel Resources
+* Eloquent models
 
 ### Infer `ticket_topic` from ticket text
 
@@ -81,6 +144,10 @@ Trust order:
 2. **Likely flow paths** — `[complete]` = UI→HTTP→controller chain; `[partial]` = graph gap — do not invent missing code
 3. **Files to open** — deduplicated paths from read-first
 4. **Warnings / verify manually** — low confidence, missing JS graph, truncated ticket
+5. **Ticket entities and acceptance criteria** — the ticket remains the source of truth
+
+If the graph and the ticket disagree, trust the ticket first.
+The graph is a navigation aid, not the specification.
 
 Ignore flow paths that do not match ticket entities (unrelated controllers/endpoints). Prefer names from the ticket (hero, preset, slide, etc.).
 
@@ -165,5 +232,6 @@ Heavier output; use when refactoring a core method.
 - Partial flow paths when Vue has no `HTTP_REQUEST` edge (missing path aliases or scan gap)
 - Pug templates not parsed
 - Graph excludes `vendor`, `node_modules`, `tests` by default
+- Ticket ranking is heuristic; explicit `--answers` are preferred when ticket intent is clear
 
 Human setup (scan, config): `impactlens scan …` · see package docs / quickstart
