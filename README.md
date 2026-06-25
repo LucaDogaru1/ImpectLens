@@ -77,7 +77,9 @@ impactlens ticket sqlite/Graph.sqlite \
   --scopes=php,js
 ```
 
-Use ticket analysis only when the ticket already contains enough technical information (API names, endpoints, field names, symbols, routes, etc.). Otherwise, locate the first code symbol yourself and continue with the graph commands.
+Use ticket analysis only when the ticket already contains enough technical information (API names, endpoints, field names, symbols, routes, etc.). Otherwise, locate the first code symbol yourself or let your AI agent do it, then continue with the graph commands.
+
+**Most users will simply install the generated skill.md and let their AI agent use ImpactLens whenever it is beneficial**.
 
 ---
 
