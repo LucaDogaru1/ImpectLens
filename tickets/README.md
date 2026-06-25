@@ -1,14 +1,16 @@
 # Tickets (local)
 
-Put ticket text files here.
-
-**Agents:** classify first, then analyze with the flags you chose.
+Put ticket text files here (optional — agents can pass inline `--ticket="…"` instead).
 
 ```bash
-# 1. Classify (required)
-npm run classify:ticket -- tickets/my-ticket.txt
+# Inline ticket text (preferred for agents)
+npm run analyze:ticket -- sqlite/Graph.sqlite \
+  --ticket="Hero teaser layout on homepage" \
+  --scopes=php,js \
+  --answers=ticket_topic:ui,change_includes:cms_ui \
+  --non-interactive
 
-# 2. Analyze (use --answers and --scopes from classification review)
+# Or from a file
 npm run analyze:ticket -- sqlite/Graph.sqlite \
   --ticket=tickets/my-ticket.txt \
   --scopes=php,js \

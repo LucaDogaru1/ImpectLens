@@ -2,8 +2,6 @@ import { TicketAnalyzerResult } from "./ticketAnalyzerV3";
 import { filterFlowPathsForBriefing, TicketFlowPath } from "./ticketFlowPaths";
 import { routeLabelsFromAnchors } from "./ticketRouteAnchoring";
 import { formatIntentLabel } from "./ticketIntent";
-import { formatClassificationBriefingSection } from "./ticketClassification";
-import type { TicketClassification } from "./ticketClassification";
 import {
     adjustScoreForRankingHints,
     hasRankingHints,
@@ -494,8 +492,7 @@ function formatFlowPathLines(flowPaths: TicketFlowPath[]): string[] {
 export function buildTicketBriefing(
     analysis: TicketAnalyzerResult,
     probe: TicketProbeResult,
-    resolved: TicketSessionResolved,
-    classification?: TicketClassification
+    resolved: TicketSessionResolved
 ): TicketBriefing {
     const structuralIds = new Set(probe.structuralCandidates.map(item => item.id));
     const workflowType = resolved.lockedWorkflow ?? analysis.workflow.type;
@@ -638,16 +635,6 @@ export function buildTicketBriefing(
     const markdown = [
         "# Ticket Briefing (AI context pack)",
         "",
-        ...(classification
-            ? [
-                  ...formatClassificationBriefingSection(classification, {
-                      ticket_topic: resolved.confirmedTopic,
-                      change_includes: resolved.changeIncludes,
-                      scopes: resolved.scopes,
-                  }),
-                  "",
-              ]
-            : []),
         "## Session",
         ...(intentLabel ? [`- User intent: **${intentLabel}**`] : []),
         `- Workflow: **${workflowLabel}** (${analysis.workflow.confidence})`,
@@ -699,6 +686,5 @@ export function buildTicketBriefing(
         skip,
         verify,
         warnings,
-        classification,
     };
 }

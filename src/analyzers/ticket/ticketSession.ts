@@ -67,9 +67,7 @@ function runFinalAnalysis(
     db: SQLiteDatabase,
     session: TicketSessionState,
     graph: TicketGraphContext,
-    options?: Pick<TicketAnalyzerOptions, "limit" | "includeDebug" | "rankingHints"> & {
-        classification?: import("./ticketClassification").TicketClassification;
-    }
+    options?: Pick<TicketAnalyzerOptions, "limit" | "includeDebug" | "rankingHints">
 ): { analysis: TicketAnalyzerResult; briefing: ReturnType<typeof buildTicketBriefing> } {
     const enrichedTicket = enrichTicketForAnalysis(session.ticketText, session.resolved);
     const analysis = analyzeTicket(db, enrichedTicket, {
@@ -78,12 +76,7 @@ function runFinalAnalysis(
         rankingHints: options?.rankingHints,
         graph,
     });
-    const briefing = buildTicketBriefing(
-        analysis,
-        session.probe!,
-        session.resolved,
-        options?.classification
-    );
+    const briefing = buildTicketBriefing(analysis, session.probe!, session.resolved);
 
     return { analysis, briefing };
 }
@@ -139,9 +132,7 @@ function runScanPhase(
     answers: Record<string, string>,
     round: number,
     graph?: TicketGraphContext,
-    options?: Pick<TicketAnalyzerOptions, "limit" | "includeDebug" | "rankingHints"> & {
-        classification?: import("./ticketClassification").TicketClassification;
-    }
+    options?: Pick<TicketAnalyzerOptions, "limit" | "includeDebug" | "rankingHints">
 ): TicketSessionStartResult {
     const ctx = graph ?? loadTicketGraphContext(db);
     let session = buildSessionState(
@@ -230,7 +221,6 @@ export function startTicketSession(
         limit: input.limit,
         includeDebug: input.includeDebug,
         rankingHints: input.rankingHints,
-        classification: input.classification,
     });
 }
 
@@ -240,7 +230,6 @@ export function continueTicketSession(
     newAnswers: Record<string, string>,
     options?: Pick<TicketAnalyzerOptions, "limit" | "includeDebug" | "rankingHints"> & {
         graph?: TicketGraphContext;
-        classification?: import("./ticketClassification").TicketClassification;
     }
 ): TicketSessionContinueResult {
     const mergedAnswers = { ...session.answers, ...newAnswers };

@@ -20,6 +20,8 @@ It helps you answer:
 - What breaks if I change this?
 - How does a UI action reach backend code?
 
+**In summary:** ImpactLens helps developers and AI agents find the right place to start, reducing exploration time and improving navigation in large codebases.
+
 ---
 
 ## Install

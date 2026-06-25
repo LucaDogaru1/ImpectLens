@@ -2,37 +2,30 @@
 
 `analyze:ticket` maps ticket text to ranked graph nodes and produces an **AI briefing** (read-first list, flow paths, warnings).
 
-**Agents:** run `ticket:classify` first, review the JSON, decide `--answers` and `--scopes`, then run `analyze:ticket`. The briefing includes the classification section (suggestions vs applied answers).
+**Agents:** read the ticket, decide `--answers` and `--scopes`, then run `analyze:ticket` with inline `--ticket` text.
 
-Default mode runs a **session**: intent questions → graph probe → briefing. **Interactive by default** — use `--non-interactive` with explicit `--answers` from classification review. Use `--legacy` for the older direct analyzer output.
+Default mode runs a **session**: intent questions → graph probe → briefing. **Interactive by default** — use `--non-interactive` with explicit `--answers`. Use `--legacy` for the older direct analyzer output.
 
 ## Quick start
 
-### 1. Classify
-
-```bash
-npm run classify:ticket -- --ticket=tickets/example.txt
-```
-
-### 2. Analyze (after choosing answers)
-
-Default output is the **AI briefing only** — optimized for pasting into an LLM. Use `--full` for raw matches and evidence.
-
 ```bash
 npm run analyze:ticket -- sqlite/Graph.sqlite \
-  --ticket=tickets/example.txt \
+  --ticket="Hero teaser: full-width layout on homepage" \
   --scopes=php,js \
   --answers=ticket_topic:ui,change_includes:cms_ui \
   --non-interactive
 ```
 
-Add `--full` when debugging ranking.
+Or pass a ticket file when one exists on disk: `--ticket=tickets/example.txt`
+
+Default output is the **AI briefing only** — optimized for pasting into an LLM. Use `--full` for raw matches and evidence.
 
 | Flag | Purpose |
 |---|---|
-| `--scopes=php,js` | Graph scopes (defaults from classification when `--answers` set and `--scopes` omitted) |
-| `--non-interactive` | Skip prompts; **requires** `--answers` from classification review |
-| `--answers=...` | Required in `--non-interactive` — do not omit |
+| `--ticket=text` | Inline ticket text or path to a ticket file |
+| `--scopes=php,js` | Graph scopes (`php` or `php,js`) |
+| `--non-interactive` | Skip prompts; **requires** `--answers` |
+| `--answers=...` | `ticket_topic` + `change_includes` (required in `--non-interactive`) |
 | `--boost=term,...` | Agent hint: boost graph nodes matching these symbols or path segments |
 | `--suppress=term,...` | Agent hint: demote or drop nodes matching these terms |
 | `--full` | Briefing + detailed analysis sections |
@@ -97,7 +90,11 @@ Explainable score components:
 npm run scan -- /path/to/repo --lang=both --output=both
 
 # 2. Ticket → briefing
-npm run analyze:ticket -- sqlite/Graph.sqlite --ticket=tickets/my-ticket.txt --scopes=php,js --full
+npm run analyze:ticket -- sqlite/Graph.sqlite \
+  --ticket="…" \
+  --scopes=php,js \
+  --answers=ticket_topic:ui,change_includes:cms_ui \
+  --non-interactive
 
 # 3. Deep context on a top hit
 npm run analyze:ai-context -- sqlite/Graph.sqlite "Some\\Controller::update" --compact
@@ -105,6 +102,6 @@ npm run analyze:ai-context -- sqlite/Graph.sqlite "Some\\Controller::update" --c
 
 ## Ticket files
 
-Store tickets in `tickets/`. See [tickets/README.md](../tickets/README.md).
+Store tickets in `tickets/` (optional). See [tickets/README.md](../tickets/README.md).
 
 Optional ticket tuning: see `config/ticket.json` and [config.md](config.md) (reference schema; not auto-loaded yet).

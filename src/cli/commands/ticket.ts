@@ -11,13 +11,8 @@ import {
 import {
     hasIntentAnswers,
     INTENT_SESSION_INTRO,
+    buildIntentQuestions,
 } from "../../analyzers/ticket/ticketIntent";
-import {
-    classifyTicket,
-    classificationToSuggestedFlags,
-    formatClassificationMarkdown,
-    type TicketClassification,
-} from "../../analyzers/ticket/ticketClassification";
 import {
     continueTicketSession,
     startTicketSession,
@@ -30,7 +25,7 @@ import {
 import { toBulletList } from "../../shared/formatting/text";
 import { buildRankingHints, hasRankingHints } from "../../analyzers/ticket/ticketRankingHints";
 import { getIntOption, getOptionValue, hasFlag } from "../shared/cliArgs";
-import { readTicketFile, resolveTicketPath, TICKET_INPUT_HELP } from "../shared/ticketInput";
+import { resolveTicketInput, TICKET_INPUT_HELP } from "../shared/ticketInput";
 
 type TicketRenderPayload = TicketAnalyzerResult & {
     limit: number;
@@ -47,7 +42,8 @@ type RenderableNode = {
 const dbPath = process.argv[2];
 const args = process.argv.slice(3);
 
-const ticketPath = resolveTicketPath(args);
+const ticketInput = resolveTicketInput(args);
+const ticketText = ticketInput.text;
 const limit = getIntOption(args, "--limit", 5, 1);
 const jsonOutput = hasFlag(args, "--json");
 const outputPath = getOptionValue(args, "--output");
@@ -68,11 +64,11 @@ const sessionOptions = {
 };
 
 function resolveTicketText(): string {
-    return readTicketFile(ticketPath).text;
+    return ticketInput.text;
 }
 
 function resolveTicketSource(): string {
-    return ticketPath?.trim() ? path.resolve(ticketPath) : "--ticket";
+    return ticketInput.source || "--ticket";
 }
 
 function inferDefaultScopes(db: Database): Array<"php" | "js"> {
@@ -481,23 +477,15 @@ async function promptForAnswers(
     return answers;
 }
 
-async function runSessionFlow(
-    db: Database,
-    classification: TicketClassification
-): Promise<string> {
+async function runSessionFlow(db: Database): Promise<string> {
     const ticketText = resolveTicketText();
     const presetAnswers = parseAnswers(getOptionValue(args, "--answers"));
-    const scopes = scopesArg
-        ? parseScopes(scopesArg, db)
-        : hasIntentAnswers(presetAnswers)
-          ? classification.scopes
-          : parseScopes(undefined, db);
+    const scopes = parseScopes(scopesArg, db);
 
     let result = startTicketSession(db, {
         ticketText,
         scopes,
         answers: presetAnswers,
-        classification,
         skipIntent: nonInteractive,
         ...sessionOptions,
     });
@@ -524,14 +512,13 @@ async function runSessionFlow(
 
             if (Object.keys(newAnswers).length === 0) {
                 if (result.session.phase === "intent") {
-                    return renderClassificationRequired(classification, presetAnswers);
+                    return renderAnswersRequired(presetAnswers);
                 }
                 return renderProbeSummary(result);
             }
 
             result = continueTicketSession(db, result.session, newAnswers, {
                 ...sessionOptions,
-                classification,
             });
             continue;
         }
@@ -542,7 +529,6 @@ async function runSessionFlow(
 
         result = continueTicketSession(db, result.session, answers, {
             ...sessionOptions,
-            classification,
         });
 
         if (result.status === "needs_input" && answers.truncated_ack === "no") {
@@ -573,33 +559,33 @@ async function runSessionFlow(
     return result.briefing.markdown;
 }
 
-function renderClassificationRequired(
-    classification: TicketClassification,
-    presetAnswers: Record<string, string>
-): string {
-    const suggested = classificationToSuggestedFlags(classification);
+function renderAnswersRequired(presetAnswers: Record<string, string>): string {
+    const questions = buildIntentQuestions(resolveTicketText());
     const lines = [
-        "# Ticket Analysis — classification required",
+        "# Ticket Analysis — answers required",
         "",
-        "Run `impactlens ticket:classify` first, review the output, then rerun analyze:ticket with explicit flags.",
-        "",
-        formatClassificationMarkdown(classification),
-        "",
-        "## Next step",
-        "",
-        "Pass `--answers` and `--scopes` based on your review (override suggestions when confidence is low):",
+        "Read the ticket and pass `--answers` with `--non-interactive`:",
         "",
         "```bash",
-        `impactlens ticket sqlite/Graph.sqlite \\`,
-        `  --ticket=<path> \\`,
-        `  --scopes=${suggested.scopes} \\`,
-        `  --answers=${suggested.answers} \\`,
-        `  --non-interactive`,
+        "impactlens ticket sqlite/Graph.sqlite \\",
+        '  --ticket="<ticket text>" \\',
+        "  --scopes=php,js \\",
+        "  --answers=ticket_topic:ui,change_includes:cms_ui \\",
+        "  --non-interactive",
         "```",
+        "",
     ];
 
+    for (const question of questions) {
+        lines.push(`## ${question.id}`);
+        for (const option of question.options) {
+            lines.push(`- \`${option.id}\` — ${option.label}`);
+        }
+        lines.push("");
+    }
+
     if (Object.keys(presetAnswers).length > 0) {
-        lines.push("", `Partial --answers provided: ${JSON.stringify(presetAnswers)}`);
+        lines.push(`Partial --answers provided: ${JSON.stringify(presetAnswers)}`);
     }
 
     return lines.join("\n");
@@ -610,12 +596,12 @@ if (!dbPath) {
         "Usage: npx tsx src/cli/commands/ticket.ts Graph.sqlite [options]",
         "",
         "Ticket source:",
-        "  --ticket=path        Path to ticket text file (e.g. tickets/my-ticket.txt)",
+        TICKET_INPUT_HELP,
         "",
         "Session (interactive by default; briefing-only output unless --full):",
-        "  --scopes=php,js      Graph scopes (defaults from classification when --answers set)",
-        "  --non-interactive    Skip prompts; requires --answers from ticket:classify review",
-        "  --answers=q:id,...   Required in --non-interactive (decide after ticket:classify)",
+        "  --scopes=php,js      Graph scopes (php or php,js)",
+        "  --non-interactive    Skip prompts; requires --answers (agent decides from ticket text)",
+        "  --answers=q:id,...   ticket_topic + change_includes (required in --non-interactive)",
         "  --boost=term,...     Agent hint: boost nodes matching these symbols/paths",
         "  --suppress=term,...  Agent hint: demote or drop nodes matching these terms",
         "  --full               Briefing + detailed analysis (raw matches, evidence)",
@@ -627,18 +613,14 @@ if (!dbPath) {
     process.exit(2);
 }
 
-const ticketText = resolveTicketText();
-
 if (ticketText.trim().length === 0) {
     console.log([
-        "No ticket file provided.",
+        "No ticket text provided.",
         "",
         TICKET_INPUT_HELP,
     ].join("\n"));
     process.exit(2);
 }
-
-const classification = classifyTicket(ticketText);
 
 const db = new Database(dbPath);
 
@@ -671,18 +653,14 @@ async function main(): Promise<void> {
         }
 
         if (nonInteractive && !hasIntentAnswers(parseAnswers(getOptionValue(args, "--answers")))) {
-            const markdown = renderClassificationRequired(
-                classification,
-                parseAnswers(getOptionValue(args, "--answers"))
-            );
+            const markdown = renderAnswersRequired(parseAnswers(getOptionValue(args, "--answers")));
 
             if (jsonOutput) {
                 const outputJson = JSON.stringify(
                     {
                         status: "needs_answers",
                         message:
-                            "Review ticket:classify output, decide --answers and --scopes, then rerun analyze:ticket.",
-                        classification,
+                            "Read the ticket text, pass --answers and --scopes, then rerun analyze:ticket.",
                     },
                     null,
                     2
@@ -697,25 +675,12 @@ async function main(): Promise<void> {
             process.exit(2);
         }
 
-        const markdown = await runSessionFlow(db, classification);
+        const markdown = await runSessionFlow(db);
 
         if (jsonOutput) {
-            console.log(
-                JSON.stringify(
-                    {
-                        classification,
-                        markdown,
-                    },
-                    null,
-                    2
-                )
-            );
+            console.log(JSON.stringify({ markdown }, null, 2));
             if (outputPath) {
-                fs.writeFileSync(
-                    outputPath,
-                    JSON.stringify({ classification, markdown }, null, 2),
-                    "utf8"
-                );
+                fs.writeFileSync(outputPath, JSON.stringify({ markdown }, null, 2), "utf8");
             }
             return;
         }
