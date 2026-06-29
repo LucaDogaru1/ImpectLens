@@ -1,3 +1,4 @@
+import path from "node:path";
 import { getOptionValue } from "../../cli/shared/cliArgs";
 import { OutputMode, ScanCliOptions, ScanLanguage } from "../types/scanCli";
 
@@ -16,7 +17,7 @@ function parseLanguage(value: string | undefined): ScanLanguage {
 }
 
 export function parseScanCliOptions(argv: string[]): ScanCliOptions {
-    let rootDir = process.cwd();
+    const rootDirs: string[] = [];
     let outputMode: OutputMode = "json";
     let sqlitePath = "sqlite/Graph.sqlite";
     let language: ScanLanguage = "both";
@@ -46,9 +47,21 @@ export function parseScanCliOptions(argv: string[]): ScanCliOptions {
 
     for (const arg of argv) {
         if (!arg.startsWith("--")) {
-            rootDir = arg;
+            rootDirs.push(path.resolve(arg));
         }
     }
 
-    return { rootDir, outputMode, sqlitePath, language, mergeExistingGraph, graphJsonPath };
+    if (rootDirs.length === 0) {
+        rootDirs.push(process.cwd());
+    }
+
+    return {
+        rootDirs,
+        rootDir: rootDirs[0]!,
+        outputMode,
+        sqlitePath,
+        language,
+        mergeExistingGraph,
+        graphJsonPath,
+    };
 }

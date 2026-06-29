@@ -54,8 +54,14 @@ function recoverHttpResources(source: string, relativePath: string): number {
     return extractHttpResourcesFromSource(source, ensureJsModuleNode(relativePath));
 }
 
-export function processJsFiles(files: ScannedJsFile[], parser: Parser): void {
-    resetHttpResourceRegistry();
+export function processJsFiles(
+    files: ScannedJsFile[],
+    parser: Parser,
+    options?: { resetHttpResourceRegistry?: boolean; linkCrossLanguageEndpoints?: boolean }
+): void {
+    if (options?.resetHttpResourceRegistry !== false) {
+        resetHttpResourceRegistry();
+    }
     populateHttpResourceRegistry(files);
 
     const tsParser = createTsParser();
@@ -133,11 +139,13 @@ export function processJsFiles(files: ScannedJsFile[], parser: Parser): void {
         console.log(`Parsed ${tsFallbackFiles} TypeScript files via strip fallback`);
     }
 
-    const linkStats = linkCrossLanguageEndpoints();
-    if (linkStats.canonicalized > 0 || linkStats.merged > 0 || linkStats.backendLinked > 0) {
-        console.log(
-            `Cross-language endpoints: ${linkStats.canonicalized} canonicalized, ` +
-            `${linkStats.merged} merged, ${linkStats.backendLinked} linked to PHP backend`
-        );
+    if (options?.linkCrossLanguageEndpoints !== false) {
+        const linkStats = linkCrossLanguageEndpoints();
+        if (linkStats.canonicalized > 0 || linkStats.merged > 0 || linkStats.backendLinked > 0) {
+            console.log(
+                `Cross-language endpoints: ${linkStats.canonicalized} canonicalized, ` +
+                `${linkStats.merged} merged, ${linkStats.backendLinked} linked to PHP backend`
+            );
+        }
     }
 }

@@ -1,6 +1,6 @@
 {
   "name": "impactlens",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Static code graph scanner and ticket-driven briefing CLI for AI-assisted development. currently only supports php and js/vue",
   "main": "bin/impactlens.js",
   "bin": {
@@ -12,6 +12,7 @@
     "assets/",
     "scripts/",
     "config/architecture_scan/laravel.example.json",
+    "impactlens.config.example.json",
     "docs/",
     "README.md"
   ],

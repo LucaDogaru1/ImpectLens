@@ -1,9 +1,10 @@
+import path from "node:path";
 import { createPhpParser } from "../scanner/php/parse/parser";
 import { processPhpFiles } from "../scanner/php/pipeline/processPhpFiles";
-import { scanPhpFiles } from "../scanner/php/scanPhp";
+import { scanPhpFiles, type ScannedPhpFile } from "../scanner/php/scanPhp";
 import { createJsParser } from "../scanner/js/parse/parser";
 import { processJsFiles } from "../scanner/js/pipeline/processJsFiles";
-import { scanJsFiles } from "../scanner/js/scanJs";
+import { scanJsFiles, type ScannedJsFile } from "../scanner/js/scanJs";
 import writeGraphJson from "../persistence/writeGraphJson";
 import writeGraphSqlite from "../persistence/writeGraphSqlite";
 import chalk from "chalk";
@@ -13,7 +14,7 @@ import { loadGraphJson, mergeGraphs } from "../persistence/loadGraphJson";
 import { graph, resetGraph } from "../graph/graph";
 
 const {
-    rootDir,
+    rootDirs,
     outputMode,
     sqlitePath,
     language,
@@ -21,29 +22,72 @@ const {
     graphJsonPath,
 } = parseScanCliOptions(process.argv.slice(2));
 
-console.log("rootDir:", rootDir);
+const multiRoot = rootDirs.length > 1;
+
+console.log("scan roots:", rootDirs.join(", "));
 console.log("language:", language);
-const scanConfig = loadScanConfig(rootDir);
-if (scanConfig.pathAliases && Object.keys(scanConfig.pathAliases).length > 0) {
-    console.log("scan config: path aliases loaded");
-}
 console.log(chalk.blue.bold("🔍 Starting directory scan...\n"));
 
 resetGraph();
 
+function pathPrefixForRoot(rootDir: string): string {
+    if (!multiRoot) {
+        return "";
+    }
+
+    return `${path.basename(rootDir.replace(/\/$/, ""))}/`;
+}
+
+function prefixRelativePaths<T extends { relativePath: string }>(
+    files: T[],
+    prefix: string
+): T[] {
+    if (!prefix) {
+        return files;
+    }
+
+    return files.map(file => ({
+        ...file,
+        relativePath: `${prefix}${file.relativePath}`,
+    }));
+}
+
 if (language === "php" || language === "both") {
     const phpParser = createPhpParser();
-    const phpFiles = scanPhpFiles(rootDir, DEFAULT_SCAN_IGNORE);
-    console.log(chalk.cyan(`PHP files: ${phpFiles.length}`));
+    const phpFiles: ScannedPhpFile[] = [];
+
+    for (const rootDir of rootDirs) {
+        const prefix = pathPrefixForRoot(rootDir);
+        const files = prefixRelativePaths(scanPhpFiles(rootDir, DEFAULT_SCAN_IGNORE), prefix);
+        console.log(chalk.cyan(`PHP files (${rootDir}): ${files.length}`));
+        phpFiles.push(...files);
+    }
+
     processPhpFiles(phpFiles, phpParser);
     console.log(chalk.green("✅ finished PHP walk"));
 }
 
 if (language === "js" || language === "both") {
     const jsParser = createJsParser();
-    const jsFiles = scanJsFiles(rootDir, DEFAULT_SCAN_IGNORE);
-    console.log(chalk.cyan(`JS files: ${jsFiles.length}`));
-    processJsFiles(jsFiles, jsParser);
+
+    for (let index = 0; index < rootDirs.length; index += 1) {
+        const rootDir = rootDirs[index]!;
+        const scanConfig = loadScanConfig(rootDir);
+
+        if (scanConfig.pathAliases && Object.keys(scanConfig.pathAliases).length > 0) {
+            console.log(`scan config (${rootDir}): path aliases loaded`);
+        }
+
+        const prefix = pathPrefixForRoot(rootDir);
+        const jsFiles = prefixRelativePaths(scanJsFiles(rootDir, DEFAULT_SCAN_IGNORE), prefix);
+        console.log(chalk.cyan(`JS files (${rootDir}): ${jsFiles.length}`));
+
+        processJsFiles(jsFiles, jsParser, {
+            resetHttpResourceRegistry: index === 0,
+            linkCrossLanguageEndpoints: index === rootDirs.length - 1,
+        });
+    }
+
     console.log(chalk.green("✅ finished JS walk"));
 }
 

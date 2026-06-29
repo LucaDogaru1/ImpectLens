@@ -1,0 +1,6 @@
+{
+  "pathAliases": {
+    "@/": "src/"
+  },
+  "httpResourceClassPattern": "Resource"
+}

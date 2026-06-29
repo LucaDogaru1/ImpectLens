@@ -7,7 +7,7 @@ This page contains detailed command usage for ImpactLens.
 Purpose: parse PHP and/or JavaScript/Vue files and build the graph database.
 
 ```bash
-npm run scan -- <project-root> [options]
+npm run scan -- <project-root> [more-roots...] [options]
 ```
 
 Examples:
@@ -15,8 +15,11 @@ Examples:
 ```bash
 npm run scan -- phptest/mini --lang=php --output=sqlite --sqlite-path=Graph.mini.sqlite
 npm run scan -- /path/to/monorepo --lang=both --no-merge --output=both
+npm run scan -- /path/to/backend /path/to/frontend --lang=both --no-merge --output=both --sqlite-path=sqlite/Graph.sqlite
 npm run scan -- jsproject --lang=js --no-merge --output=json
 ```
+
+Multiple scan roots: pass several project paths (sibling repos). File paths in the graph are prefixed with each root folder name (e.g. `backend/app/...`, `frontend/src/...`). Place `impactlens.config.json` in **each** root that uses path aliases.
 
 Options:
 

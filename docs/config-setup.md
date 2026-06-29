@@ -96,7 +96,8 @@ Real-world example (Nuxt `packages/` layout):
     "@content/": "packages/content/",
     "@ui-design/": "packages/ui-design/",
     "@/": "packages/core/"
-  }
+  },
+  "httpResourceClassPattern": "Resource"
 }
 ```
 
