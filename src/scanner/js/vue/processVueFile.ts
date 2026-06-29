@@ -54,24 +54,12 @@ export function processVueFile(
     }
 
     const rawScript = sfc.script.content;
-    let parsed: ReturnType<typeof parseVueScript>;
-
-    try {
-        parsed = parseVueScript(
-            rawScript,
-            sfc.script.lang,
-            options.jsParser,
-            options.tsParser
-        );
-    } catch (error) {
-        console.error(`Vue script parser crashed: ${file.absolutePath}`);
-        console.error(error);
-        return { usedTsParser: false, usedStripFallback: false, parseError: true };
-    }
-
-    if (parsed.tree.rootNode.hasError) {
-        console.error(`Error parsing Vue script: ${file.absolutePath}`);
-    }
+    const parsed = parseVueScript(
+        rawScript,
+        sfc.script.lang,
+        options.jsParser,
+        options.tsParser
+    );
 
     const externalTemplate = resolveTemplateContent(sfc);
     const context = {

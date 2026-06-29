@@ -15,24 +15,40 @@ import {
 } from "../walk/classPropertyTypesRegistry";
 import { isBladeFile } from "../blade/bladeScanner";
 import { parseBladeFile } from "../blade/parseBladeFile";
+import { errorDetail, recordScanFailure } from "../../../shared/reporting/scanFailures";
+import { createScanProgress } from "../../../shared/reporting/scanProgress";
 
-function walkPhpFile(parser: Parser, file: ScannedPhpFile): void {
-    const tree = parsePhpFile(parser, file.absolutePath);
+function walkPhpFile(parser: Parser, file: ScannedPhpFile): boolean {
+    try {
+        const tree = parsePhpFile(parser, file.absolutePath);
 
-    if (tree.rootNode.hasError) {
-        console.error(`Error parsing file: ${file.absolutePath}`);
-        return;
+        if (tree.rootNode.hasError) {
+            recordScanFailure({
+                file: file.relativePath,
+                reason: "php_parse_error",
+                detail: "tree-sitter hasError",
+            });
+            return false;
+        }
+
+        const context: WalkContext = {
+            classPropertyTypes: new Map(),
+            variableTypes: new Map(),
+            imports: new Map(),
+            extractedFields: [],
+            dataFlows: new Map(),
+        };
+
+        walk(tree.rootNode, file.relativePath, context);
+        return true;
+    } catch (error) {
+        recordScanFailure({
+            file: file.relativePath,
+            reason: "php_parser_crash",
+            detail: errorDetail(error),
+        });
+        return false;
     }
-
-    const context: WalkContext = {
-        classPropertyTypes: new Map(),
-        variableTypes: new Map(),
-        imports: new Map(),
-        extractedFields: [],
-        dataFlows: new Map(),
-    };
-
-    walk(tree.rootNode, file.relativePath, context);
 }
 
 export function processPhpFiles(files: ScannedPhpFile[], parser: Parser) {
@@ -42,15 +58,22 @@ export function processPhpFiles(files: ScannedPhpFile[], parser: Parser) {
 
     classPropertyTypesRegistry.clear();
 
+    const prepProgress = createScanProgress({ label: "PHP prep", total: files.length });
+    prepProgress.start();
+
     for (const file of files) {
         if (isBladeFile(file.relativePath)) {
             try {
                 parseBladeFile(file.absolutePath, file.relativePath);
                 bladeFileCount += 1;
             } catch (error) {
-                console.error(`Blade scan failed: ${file.absolutePath}`);
-                console.error(error);
+                recordScanFailure({
+                    file: file.relativePath,
+                    reason: "blade_scan_failed",
+                    detail: errorDetail(error),
+                });
             }
+            prepProgress.tick(file.relativePath);
             continue;
         }
 
@@ -61,34 +84,58 @@ export function processPhpFiles(files: ScannedPhpFile[], parser: Parser) {
                     file.relativePath
                 );
             } catch (error) {
-                console.error(`Route extraction failed: ${file.absolutePath}`);
-                console.error(error);
+                recordScanFailure({
+                    file: file.relativePath,
+                    reason: "route_extraction_failed",
+                    detail: errorDetail(error),
+                });
             }
+            prepProgress.tick(file.relativePath);
             continue;
         }
 
         phpFiles.push(file);
+        prepProgress.tick(file.relativePath);
     }
+
+    prepProgress.done();
+
+    const walkablePhpFiles: ScannedPhpFile[] = [];
+    const walkProgress = createScanProgress({ label: "PHP walk", total: phpFiles.length });
+    walkProgress.start();
 
     for (const file of phpFiles) {
-        try {
-            walkPhpFile(parser, file);
-        } catch (error) {
-            console.error(`Parser crashed on file: ${file.absolutePath}`);
-            console.error(error);
+        if (walkPhpFile(parser, file)) {
+            walkablePhpFiles.push(file);
         }
+        walkProgress.tick(file.relativePath);
     }
 
+    walkProgress.done();
+
+    const propagateProgress = createScanProgress({ label: "PHP types" });
+    propagateProgress.start();
     propagateClassPropertyTypes();
+    propagateProgress.done();
 
-    for (const file of phpFiles) {
-        try {
-            walkPhpFile(parser, file);
-        } catch (error) {
-            console.error(`Parser crashed on file: ${file.absolutePath}`);
-            console.error(error);
-        }
+    const walk2Progress = createScanProgress({
+        label: "PHP walk (2)",
+        total: walkablePhpFiles.length,
+    });
+    walk2Progress.start();
+
+    for (const file of walkablePhpFiles) {
+        walkPhpFile(parser, file);
+        walk2Progress.tick(file.relativePath);
     }
+
+    walk2Progress.done();
+
+    const resolveProgress = createScanProgress({ label: "PHP resolve" });
+    resolveProgress.start();
+    resolveInterfaceCalls();
+    resolveArgumentEdges();
+    resolveProgress.done();
 
     if (extractedRouteCount > 0) {
         console.log(`Extracted ${extractedRouteCount} Laravel routes from route files`);
@@ -97,7 +144,4 @@ export function processPhpFiles(files: ScannedPhpFile[], parser: Parser) {
     if (bladeFileCount > 0) {
         console.log(`Scanned ${bladeFileCount} Blade views`);
     }
-
-    resolveInterfaceCalls();
-    resolveArgumentEdges();
 }

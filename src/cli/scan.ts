@@ -12,6 +12,11 @@ import { loadScanConfig } from "../shared/config/scanRuntime";
 import { DEFAULT_SCAN_IGNORE, parseScanCliOptions } from "../shared/utils/scanCli";
 import { loadGraphJson, mergeGraphs } from "../persistence/loadGraphJson";
 import { graph, resetGraph } from "../graph/graph";
+import {
+    printScanFailureSummary,
+    resetScanFailures,
+} from "../shared/reporting/scanFailures";
+import { createScanProgress } from "../shared/reporting/scanProgress";
 
 const {
     rootDirs,
@@ -29,6 +34,7 @@ console.log("language:", language);
 console.log(chalk.blue.bold("🔍 Starting directory scan...\n"));
 
 resetGraph();
+resetScanFailures();
 
 function pathPrefixForRoot(rootDir: string): string {
     if (!multiRoot) {
@@ -58,8 +64,10 @@ if (language === "php" || language === "both") {
 
     for (const rootDir of rootDirs) {
         const prefix = pathPrefixForRoot(rootDir);
+        const discoverProgress = createScanProgress({ label: "Finding PHP files" });
+        discoverProgress.start();
         const files = prefixRelativePaths(scanPhpFiles(rootDir, DEFAULT_SCAN_IGNORE), prefix);
-        console.log(chalk.cyan(`PHP files (${rootDir}): ${files.length}`));
+        discoverProgress.done(chalk.cyan(`PHP files (${rootDir}): ${files.length}`));
         phpFiles.push(...files);
     }
 
@@ -79,8 +87,10 @@ if (language === "js" || language === "both") {
         }
 
         const prefix = pathPrefixForRoot(rootDir);
+        const discoverProgress = createScanProgress({ label: "Finding JS files" });
+        discoverProgress.start();
         const jsFiles = prefixRelativePaths(scanJsFiles(rootDir, DEFAULT_SCAN_IGNORE), prefix);
-        console.log(chalk.cyan(`JS files (${rootDir}): ${jsFiles.length}`));
+        discoverProgress.done(chalk.cyan(`JS files (${rootDir}): ${jsFiles.length}`));
 
         processJsFiles(jsFiles, jsParser, {
             resetHttpResourceRegistry: index === 0,
@@ -92,18 +102,26 @@ if (language === "js" || language === "both") {
 }
 
 if (mergeExistingGraph) {
+    const mergeProgress = createScanProgress({ label: "Merging graph" });
+    mergeProgress.start();
     const loadedGraph = loadGraphJson(graphJsonPath);
     mergeGraphs(graph, loadedGraph);
+    mergeProgress.done();
 }
 
 console.log(chalk.blue(`Graph size: ${graph.nodes.size} nodes, ${graph.edges.size} edges`));
+printScanFailureSummary();
 
 if (outputMode === "json" || outputMode === "both") {
+    const writeProgress = createScanProgress({ label: "Writing Graph.json" });
+    writeProgress.start();
     writeGraphJson(graphJsonPath);
-    console.log(chalk.green(`Wrote ${graphJsonPath}`));
+    writeProgress.done(chalk.green(`Wrote ${graphJsonPath}`));
 }
 
 if (outputMode === "sqlite" || outputMode === "both") {
+    const writeProgress = createScanProgress({ label: "Writing SQLite" });
+    writeProgress.start();
     writeGraphSqlite(sqlitePath);
-    console.log(chalk.green(`Wrote ${sqlitePath}`));
+    writeProgress.done(chalk.green(`Wrote ${sqlitePath}`));
 }

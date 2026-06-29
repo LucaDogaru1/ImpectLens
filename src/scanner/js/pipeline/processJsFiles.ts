@@ -10,6 +10,8 @@ import { createTsParser } from "../ts/parser";
 import { processTsFile } from "../ts/processTsFile";
 import { processVueFile } from "../vue/processVueFile";
 import walk, { createWalkContext } from "../walk/jsWalker";
+import { errorDetail, recordScanFailure } from "../../../shared/reporting/scanFailures";
+import { createScanProgress } from "../../../shared/reporting/scanProgress";
 
 function isVueFile(relativePath: string): boolean {
     return relativePath.endsWith(".vue");
@@ -71,6 +73,9 @@ export function processJsFiles(
     let tsFiles = 0;
     let tsFallbackFiles = 0;
 
+    const jsProgress = createScanProgress({ label: "JS", total: files.length });
+    jsProgress.start();
+
     for (const file of files) {
         if (isVueFile(file.relativePath)) {
             try {
@@ -81,10 +86,21 @@ export function processJsFiles(
                 } else if (result.usedStripFallback) {
                     vueStripFallbackScripts += 1;
                 }
+                if (result.parseError) {
+                    recordScanFailure({
+                        file: file.relativePath,
+                        reason: "vue_parse_error",
+                        detail: "tree-sitter hasError",
+                    });
+                }
             } catch (error) {
-                console.error(`Vue parser crashed on file: ${file.absolutePath}`);
-                console.error(error);
+                recordScanFailure({
+                    file: file.relativePath,
+                    reason: "vue_parser_crash",
+                    detail: errorDetail(error),
+                });
             }
+            jsProgress.tick(file.relativePath);
             continue;
         }
 
@@ -99,12 +115,15 @@ export function processJsFiles(
                 } catch (fallbackError) {
                     const recovered = recoverHttpResources(readSource(file), file.relativePath);
                     if (recovered === 0) {
-                        console.error(`TS parser crashed on file: ${file.absolutePath}`);
-                        console.error(error);
-                        console.error(fallbackError);
+                        recordScanFailure({
+                            file: file.relativePath,
+                            reason: "ts_parse_failed",
+                            detail: errorDetail(error) ?? errorDetail(fallbackError),
+                        });
                     }
                 }
             }
+            jsProgress.tick(file.relativePath);
             continue;
         }
 
@@ -113,11 +132,17 @@ export function processJsFiles(
         } catch (error) {
             const recovered = recoverHttpResources(readSource(file), file.relativePath);
             if (recovered === 0) {
-                console.error(`JS parser crashed on file: ${file.absolutePath}`);
-                console.error(error);
+                recordScanFailure({
+                    file: file.relativePath,
+                    reason: "js_parse_error",
+                    detail: errorDetail(error),
+                });
             }
         }
+        jsProgress.tick(file.relativePath);
     }
+
+    jsProgress.done();
 
     if (vueFiles > 0) {
         console.log(`Parsed ${vueFiles} Vue SFC files`);
@@ -140,7 +165,11 @@ export function processJsFiles(
     }
 
     if (options?.linkCrossLanguageEndpoints !== false) {
+        const linkProgress = createScanProgress({ label: "JS link" });
+        linkProgress.start();
         const linkStats = linkCrossLanguageEndpoints();
+        linkProgress.done();
+
         if (linkStats.canonicalized > 0 || linkStats.merged > 0 || linkStats.backendLinked > 0) {
             console.log(
                 `Cross-language endpoints: ${linkStats.canonicalized} canonicalized, ` +
